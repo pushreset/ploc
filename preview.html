@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ploc · Aperçu</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cherry+Bomb+One&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  h1, h2, h3, #title, .grade { font-family:"Cherry Bomb One", ui-rounded, system-ui, sans-serif; font-weight:400; } /* display font for titles only */
+  #title small, h3 small { font-family:"Nunito", ui-rounded, system-ui, sans-serif; font-weight:600; }
+  :root { --ink:#5a3e52; --mute:#a5879a; --pink:#ff6f9f; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#f7e6ee; color:var(--ink); font:600 14px/1.35 "Nunito", ui-rounded, system-ui, sans-serif; overflow:hidden; touch-action:manipulation; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
+  canvas { display:block; touch-action:none; }
+  header { position:fixed; top:14px; left:16px; right:16px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; pointer-events:none; }
+  header > * { pointer-events:auto; }
+  header a { color:var(--mute); text-decoration:none; }
+  @media (hover:hover) { header a:hover { color:var(--pink); } }
+  h1 { margin:0; font-size:22px; color:var(--pink); text-shadow:0 2px 0 #fff; }
+  #sel { font:inherit; color:inherit; border:0; background:#ffffffd9; border-radius:99px; padding:8px 14px; box-shadow:0 3px 12px #c98aa833, inset 0 -2px 0 #f0d3e1; max-width:calc(100vw - 32px); }
+  #grid { position:fixed; inset:64px 0 0; overflow:auto; padding:8px 16px 40px; background:#f7e6ee; }
+  #grid section { margin:0 0 14px; }
+  #grid h3 { margin:0 0 6px; font-size:16px; display:flex; align-items:center; gap:8px; cursor:pointer; }
+  #grid h3 i { width:12px; height:12px; border-radius:4px; }
+  #grid h3:hover { color:var(--pink); }
+  #grid section > div { display:flex; flex-wrap:wrap; gap:6px; }
+  #grid figure { margin:0; width:92px; background:#fff; border-radius:14px; padding:4px 2px 6px; text-align:center; font-size:11px; box-shadow:inset 0 -2px 0 #f0d3e1; }
+  #grid img { width:76px; height:76px; display:block; margin:0 auto; }
+  #grid img:not([src]) { visibility:hidden; } /* not rendered yet */
+  body:has(#grid:not([hidden])) #tip { display:none; }
+  #grid figcaption b { display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:4px; }
+  #tip { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); color:var(--mute); font-size:13px; margin:0; text-align:center; width:calc(100% - 32px); }
+  .labels { position:fixed; inset:0; pointer-events:none; }
+  .lab { text-align:center; font-size:12px; white-space:nowrap; text-shadow:0 1px 0 #fff; }
+  .lab i { display:block; font-style:normal; font-size:10px; color:#fff; border-radius:99px; padding:0 6px; margin:2px auto 0; width:max-content; text-shadow:none; }
+  .row { font-size:14px; color:var(--ink); background:#ffffffcc; padding:3px 10px; border-radius:99px; white-space:nowrap; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<header><a href="./">← Jeu</a><h1>Aperçu des sets</h1><select id="sel"></select></header>
+<div id="grid" hidden></div>
+<p id="tip">Clique une figurine pour l’entendre · glisse pour tourner · molette pour zoomer</p>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { CHARS, BY_ID, UNIVERSES, RARITY, buildKey, disposeKey } from './chars.js';
+import * as sfx from './audio.js';
+
+const ORDER = Object.keys(UNIVERSES);
+const canvas = document.querySelector('#c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const labelR = new CSS2DRenderer(); labelR.domElement.className = 'labels'; document.body.appendChild(labelR.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#f7e6ee');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+scene.add(new THREE.HemisphereLight('#fff6fb', '#e8c9d8', 1.1));
+const sun = new THREE.DirectionalLight('#fff3e8', 2.2);
+sun.position.set(4, 12, 7); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+scene.add(sun);
+const desk = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: '#f4dde7', roughness: 0.95 }));
+desk.rotation.x = -Math.PI / 2; desk.receiveShadow = true; scene.add(desk);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 200);
+const controls = new OrbitControls(camera, canvas);
+Object.assign(controls, { enableDamping: true, maxPolarAngle: 1.35, minDistance: 2, maxDistance: 40, enablePan: false });
+
+const root = new THREE.Group(); scene.add(root);
+let items = [], extent = { w: 1, d: 1 };
+
+// one set = its 6 figures in 3D; "all" = an HTML grid of thumbnails (50 sets don't fit a 3D view)
+function show(uni) {
+  for (const it of items) disposeKey(it.key);
+  root.traverse((o) => o.isCSS2DObject && o.element.remove());
+  root.clear(); items = [];
+  sel.value = uni; history.replaceState(null, '', `#${uni}`);
+  grid.hidden = uni !== 'all';
+  if (uni === 'all') return renderGrid();
+  const sx = 1.9, sz = 2.3, list = CHARS.filter((c) => c.uni === uni), cols = 3, rows = Math.ceil(list.length / cols);
+  list.forEach((def, k) => {
+    const holder = new THREE.Group(); holder.position.set(((k % cols) - (cols - 1) / 2) * sx, 0, (((k / cols) | 0) - (rows - 1) / 2) * sz); root.add(holder);
+    const key = buildKey(def); holder.add(key.group);
+    const el = document.createElement('div'); el.className = 'lab';
+    el.innerHTML = `${def.name}<i style="background:${RARITY[def.rarity].color}">${RARITY[def.rarity].label}</i>`;
+    const lab = new CSS2DObject(el); lab.position.set(0, 0, 0.72); holder.add(lab);
+    const it = { def, key, holder, down: false, y: 0, v: 0, sq: 1, sv: 0, spin: Math.random() * 6 };
+    holder.userData.item = it; items.push(it);
+  });
+  extent = { w: cols * sx, d: rows * sz, top: false };
+  fit();
+}
+
+// thumbnails from a small second renderer, cached, filled a few per frame
+let tr, ts, tc; const thumbs = {};
+function thumb(def) {
+  if (thumbs[def.id]) return thumbs[def.id];
+  if (!tr) {
+    tr = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); tr.setSize(112, 112); tr.toneMapping = THREE.NeutralToneMapping;
+    ts = new THREE.Scene(); ts.environment = new THREE.PMREMGenerator(tr).fromScene(new RoomEnvironment(), 0.04).texture; ts.environmentIntensity = 0.6;
+    ts.add(new THREE.HemisphereLight('#fff6fb', '#e8c9d8', 1.2)); const d = new THREE.DirectionalLight('#fff3e8', 2); d.position.set(2, 4, 3); ts.add(d);
+    tc = new THREE.PerspectiveCamera(30, 1, 0.1, 20); tc.position.set(0, 1.25, 2.4); tc.lookAt(0, 0.45, 0);
+  }
+  const k = buildKey(def); ts.add(k.group); tr.render(ts, tc); thumbs[def.id] = tr.domElement.toDataURL(); disposeKey(k);
+  return thumbs[def.id];
+}
+function renderGrid() {
+  grid.innerHTML = ORDER.map((u) => `<section><h3 data-u="${u}"><i style="background:${UNIVERSES[u].cap}"></i>${UNIVERSES[u].name}</h3><div>${
+    CHARS.filter((c) => c.uni === u).map((c) => `<figure><img data-id="${c.id}" alt=""><figcaption>${c.name}<b style="background:${RARITY[c.rarity].color}"></b></figcaption></figure>`).join('')}</div></section>`).join('');
+  grid.querySelectorAll('h3').forEach((h) => (h.onclick = () => show(h.dataset.u)));
+  const imgs = [...grid.querySelectorAll('img[data-id]')];
+  const step = () => { const t0 = performance.now(); while (imgs.length && performance.now() - t0 < 14) { const im = imgs.shift(); im.src = thumb(BY_ID[im.dataset.id]); } if (imgs.length && !grid.hidden) requestAnimationFrame(step); };
+  step();
+}
+
+function fit() {
+  const half = Math.max(extent.w / 2 / camera.aspect, extent.d / 2 + 0.6);
+  const dist = (half / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * (extent.top ? 1.05 : 1.15);
+  const pitch = extent.top ? 1.15 : 0.9; // the big grid reads better seen from above
+  controls.target.set(0, 0.3, 0.2);
+  camera.position.set(0, dist * Math.sin(pitch), dist * Math.cos(pitch)).add(controls.target);
+  controls.update();
+}
+
+// set picker (a dropdown: 50 tabs don't fit) + the thumbnail grid
+const sel = document.querySelector('#sel'), grid = document.querySelector('#grid');
+sel.innerHTML = `<option value="all">Tous les sets</option>` + ORDER.map((u) => `<option value="${u}">${UNIVERSES[u].name}</option>`).join('');
+sel.onchange = () => show(sel.value);
+
+// press a figure to hear its switch; orbit pauses while a key is held
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let held = null;
+canvas.addEventListener('pointerdown', (e) => {
+  sfx.unlock();
+  ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  let o = ray.intersectObjects(root.children, true)[0]?.object;
+  while (o && !o.userData.item) o = o.parent;
+  if (!o) return;
+  held = o.userData.item; controls.enabled = false;
+  held.down = true; held.v -= 1.5; held.sv -= 4;
+  sfx.press(UNIVERSES[held.def.uni].sound, held.def.idx);
+});
+addEventListener('pointerup', () => {
+  if (!held) return;
+  held.down = false; held.sv += 3.5;
+  sfx.release(UNIVERSES[held.def.uni].sound, held.def.idx);
+  held = null; controls.enabled = true;
+});
+addEventListener('keydown', (e) => { if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key !== 'Tab' && !/^F\d+$/.test(e.key)) e.preventDefault(); });
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight); labelR.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); fit();
+}
+addEventListener('resize', resize);
+
+const spring = (x, v, t, k, d, dt) => { v += (-k * (x - t) - d * v) * dt; return [x + v * dt, v]; };
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 1 / 30), time = clock.elapsedTime;
+  for (const it of items) {
+    [it.y, it.v] = spring(it.y, it.v, it.down ? -0.13 : 0, 900, 30, dt);
+    [it.sq, it.sv] = spring(it.sq, it.sv, 1, 420, 12, dt);
+    it.key.group.position.y = it.y;
+    const wide = 1 + (1 - it.sq) * 0.6;
+    it.key.char.scale.set(wide, it.sq, wide);
+    it.key.group.rotation.y = Math.sin(time * 0.6 + it.spin) * 0.6; // slow sway so each side shows
+    for (const m of it.key.glow) m.emissiveIntensity = 0.25 + Math.sin(time * 2 + it.spin) * 0.12;
+  }
+  controls.update();
+  renderer.render(scene, camera); labelR.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+const start = location.hash.slice(1);
+resize();
+show(start === 'all' || UNIVERSES[start] ? start : 'all');
+frame();
+window.__preview = { show };
+document.addEventListener('gesturestart', (e) => e.preventDefault()); // iOS ignores user-scalable: block pinch-zoom
+</script>
+</body>
+</html>
